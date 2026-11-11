@@ -67,7 +67,12 @@ public:
      * @brief Selects the MDB material with the given uuid in the slot, together with the
      *        preset the material selection offers first for it.
      *
-     * @return false when the material is not in MDB or no preset matches it; nothing changes then.
+     * A slot that already holds the material keeps its preset when that is one offered for
+     * the material. Unlike select_material_preset() this is not an action of the user: the
+     * project is not marked as modified and the color of the slot is left to the caller.
+     *
+     * @return false when the material cannot be read from MDB or no preset matches it;
+     *         nothing changes then.
      */
     bool select_material_by_uuid(size_t material_index, const std::string& uuid);
 

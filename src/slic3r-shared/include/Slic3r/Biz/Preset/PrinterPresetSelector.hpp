@@ -30,6 +30,22 @@ std::string connect_tool_key(const Domain::Preset::HwPrinterConfig& hw_config, s
  */
 using MatDbMaterialSelector = std::function<bool(size_t slot_index, const std::string& matdb_uuid)>;
 
+/**
+ * @brief Color of a material slot after the Connect material sync.
+ *
+ * A slot whose filament could not be synchronized keeps its color along with its material.
+ */
+struct ConnectSlotColor
+{
+    /// Color Connect reports for the synchronized filament as "#rrggbb", empty when it
+    /// reports none.
+    std::string color;
+    /// The MDB material of the slot changed and Connect reports no color for the filament,
+    /// so the color the slot has from its previous material is to be replaced by the
+    /// automatic one.
+    bool reset_to_auto{false};
+};
+
 class PrinterPresetSelector : public WithListeners<IPrinterPresetSelectorListener>
 {
 public:
@@ -41,10 +57,9 @@ public:
      * A filament reported with an MDB uuid is selected by @a select_matdb_material; its
      * material type is matched only when that is not possible.
      *
-     * @return Filament colors reported by Connect as "#rrggbb", one per material slot, empty
-     *         where Connect does not report any.
+     * @return What to do with the colors, one item per material slot.
      */
-    std::vector<std::string> select_connect_materials(
+    std::vector<ConnectSlotColor> select_connect_materials(
         const nlohmann::json& printer_json,
         const MatDbMaterialSelector& select_matdb_material = {}
     );
@@ -52,7 +67,7 @@ public:
     void warn(const std::string& msg);
 
 private:
-    std::vector<std::string> select_materials(
+    std::vector<ConnectSlotColor> select_materials(
         const nlohmann::json& printer_json,
         const MatDbMaterialSelector& select_matdb_material,
         std::vector<std::string>& mismatches

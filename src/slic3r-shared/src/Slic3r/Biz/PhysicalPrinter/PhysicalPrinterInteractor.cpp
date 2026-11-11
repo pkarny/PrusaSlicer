@@ -19,8 +19,6 @@
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
-
-#include <algorithm>
 #include <boost/uuid/uuid_io.hpp>
 
 #include <algorithm>
@@ -196,9 +194,9 @@ void PhysicalPrinterInteractor::select_connect_materials(const std::string& prin
     if (connect_printer == nullptr) {
         return;
     }
-    std::vector<std::string> colors;
+    std::vector<Preset::ConnectSlotColor> slot_colors;
     try {
-        colors = m_printer_preset_selector.select_connect_materials(
+        slot_colors = m_printer_preset_selector.select_connect_materials(
             nlohmann::json::parse(connect_printer->json),
             [this](size_t slot_index, const std::string& matdb_uuid)
             {
@@ -210,10 +208,23 @@ void PhysicalPrinterInteractor::select_connect_materials(const std::string& prin
         SPDLOG_ERROR("Failed to parse Connect printer json: {}", e.what());
         return;
     }
+
+    ProjectSettingsInteractor& settings = m_project_interactor.project_settings_interactor();
+    std::vector<std::string> colors(slot_colors.size());
+    for (size_t slot = 0; slot < slot_colors.size(); ++slot) {
+        if (slot_colors[slot].reset_to_auto) {
+            settings.reset_color_to_auto(
+                m_current_project_id,
+                m_current_container_id,
+                static_cast<int>(slot)
+            );
+        }
+        colors[slot] = std::move(slot_colors[slot].color);
+    }
     if (std::ranges::any_of(colors, [](const std::string& color) { return !color.empty(); })) {
-        m_project_interactor.project_settings_interactor().set_colors_from_connect(
-            m_project_interactor.selected_project_id(),
-            m_project_interactor.selected_config_container_id(),
+        settings.set_colors_from_connect(
+            m_current_project_id,
+            m_current_container_id,
             std::move(colors)
         );
     }

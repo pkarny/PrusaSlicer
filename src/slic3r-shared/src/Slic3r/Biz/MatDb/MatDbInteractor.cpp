@@ -1,5 +1,7 @@
 #include "Slic3r/Biz/MatDb/MatDbInteractor.hpp"
 #include "Slic3r/Directories.hpp"
+#include "Slic3r/Log.hpp"
+#include "Slic3r/Biz/Algorithms/Color.hpp"
 #include "Slic3r/Biz/Preset/PresetInteractor.hpp"
 #include "Slic3r/Biz/ProjectInteractor.hpp"
 #include "Slic3r/Biz/ProjectScoped.hpp"
@@ -106,7 +108,14 @@ void MatDbInteractor::select_material_preset(
 
 bool MatDbInteractor::select_material_by_uuid(size_t material_index, const std::string& uuid)
 {
-    const std::optional<Domain::MatDb::Material> mat = m_client.get_by_uuid(uuid);
+    std::optional<Domain::MatDb::Material> mat;
+    try {
+        mat = m_client.get_by_uuid(uuid);
+    } catch (const std::exception& e) {
+        // A damaged database is handled as one that does not know the material.
+        SPDLOG_ERROR("Cannot read material {} from the material database: {}", uuid, e.what());
+        return false;
+    }
     if (!mat.has_value()) {
         return false;
     }
@@ -115,7 +124,22 @@ bool MatDbInteractor::select_material_by_uuid(size_t material_index, const std::
     if (matches.empty()) {
         return false;
     }
-    select_material_preset(material_index, *mat, matches.front().preset_id);
+
+    // The user may have picked another preset offered for the material than the first one.
+    // The uuid alone does not tell that the slot holds the material: it also stays in a slot
+    // whose preset was replaced, e.g. by the default one after another printer was selected.
+    const auto& sp                       = selected_preset();
+    const std::string& current_preset_id = sp.materials.at(material_index).id;
+    const bool holds_material            = sp.material_matdb_uuid(material_index) == uuid
+        && std::ranges::any_of(
+            matches,
+            [&current_preset_id](const PresetMatch& match)
+            { return match.preset_id == current_preset_id; }
+        );
+    if (!holds_material) {
+        m_preset_interactor
+            .select_material_preset(material_index, matches.front().preset_id, false, mat->uuid);
+    }
     return true;
 }
 
@@ -172,9 +196,7 @@ std::optional<std::string> MatDbInteractor::get_color(const std::string& uuid) c
     if (!mat.has_value() || !mat.value().primary_color.has_value()) {
         return std::nullopt;
     }
-    const auto& color = mat.value().primary_color.value().color_rgba;
-    ASSERT(color.size() == 7 || color.size() == 9);
-    return std::string{color.substr(0, 7)};
+    return Algorithms::Color::strip_alpha(mat.value().primary_color.value().color_rgba);
 }
 
 std::optional<Domain::MatDb::Material> MatDbInteractor::get_material_by_uuid(
