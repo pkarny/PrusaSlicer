@@ -1,6 +1,7 @@
 #include "Slic3r/Biz/PhysicalPrinter/PhysicalPrinterInteractor.hpp"
 
 #include "Slic3r/Biz/Preset/PresetInteractor.hpp"
+#include "Slic3r/Biz/ProjectInteractor.hpp"
 #include "Slic3r/Biz/ProjectScoped.hpp"
 #include "Slic3r/Biz/UserAccount/UserAccountInteractor.hpp"
 #include "Slic3r/Biz/Platform/PlatformServices.hpp"
@@ -18,6 +19,8 @@
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
+
+#include <algorithm>
 #include <boost/uuid/uuid_io.hpp>
 
 #include <algorithm>
@@ -64,6 +67,7 @@ PhysicalPrinterInteractor::PhysicalPrinterInteractor(
     UserAccount::UserAccountInteractor& user_account_interactor
 ) :
     m_workbench(workbench),
+    m_project_interactor(project_interactor),
     m_project_contexts(std::make_unique<ProjectContexts>(project_interactor)),
     m_dispatcher(dispatcher),
     m_preset_interactor(preset_interactor),
@@ -192,12 +196,26 @@ void PhysicalPrinterInteractor::select_connect_materials(const std::string& prin
     if (connect_printer == nullptr) {
         return;
     }
+    std::vector<std::string> colors;
     try {
-        m_printer_preset_selector.select_connect_materials(
-            nlohmann::json::parse(connect_printer->json)
+        colors = m_printer_preset_selector.select_connect_materials(
+            nlohmann::json::parse(connect_printer->json),
+            [this](size_t slot_index, const std::string& matdb_uuid)
+            {
+                return m_project_interactor.matdb_interactor()
+                    .select_material_by_uuid(slot_index, matdb_uuid);
+            }
         );
     } catch (const nlohmann::json::exception& e) {
         SPDLOG_ERROR("Failed to parse Connect printer json: {}", e.what());
+        return;
+    }
+    if (std::ranges::any_of(colors, [](const std::string& color) { return !color.empty(); })) {
+        m_project_interactor.project_settings_interactor().set_colors_from_connect(
+            m_project_interactor.selected_project_id(),
+            m_project_interactor.selected_config_container_id(),
+            std::move(colors)
+        );
     }
 }
 
